@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0F172A">
+  <title>SmartTransit AI | Dhaka</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <style>
+    :root { color-scheme: dark; }
+    body { background: #0F172A; }
+    #map { min-height: 430px; }
+    .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #111c31; color: #e2e8f0; }
+    .leaflet-container { font: inherit; background: #111c31; }
+    .report-marker { display:grid; place-items:center; width:36px; height:36px; border:2px solid #fff; border-radius:50%; background:#06B6D4; color:#082f49; font-weight:900; box-shadow:0 6px 18px #020617aa; }
+    .report-marker.alert { background:#F59E0B; color:#451a03; }
+    .xp-fill { transition: width 500ms ease; }
+  </style>
+</head>
+<body class="min-h-screen text-slate-100 antialiased">
+  <div class="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+    <header class="mb-5 rounded-2xl border border-slate-700/70 bg-slate-900/90 p-4 shadow-xl">
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <a href="/" class="flex items-center gap-3" aria-label="SmartTransit AI home">
+          <span class="grid h-11 w-11 place-items-center rounded-xl bg-cyan-400/10 text-cyan-300"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="h-7 w-7" aria-hidden="true"><path d="M5 17V6.8A2.8 2.8 0 0 1 7.8 4h8.4A2.8 2.8 0 0 1 19 6.8V17M5 13h14M7.5 17v2m9-2v2M8 8h8M8 10.5h.01M16 10.5h.01M8 17h8"/><path d="M3 9h2m14 0h2"/></svg></span>
+          <span><span class="block text-lg font-bold tracking-tight">SmartTransit <span class="text-cyan-400">AI</span></span><span class="block text-xs text-slate-400">Dhaka civic mobility network</span></span>
+        </a>
+        <div class="flex items-center gap-3 sm:gap-4">
+          <div class="hidden text-right sm:block"><div id="user-name" class="max-w-40 truncate text-sm font-semibold">Guest Observer</div><div id="user-title" class="text-xs text-cyan-300">Novice Observer</div></div>
+          <img id="avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=96&q=80" alt="Profile avatar" class="h-11 w-11 rounded-full border-2 border-cyan-400 object-cover">
+          <div class="rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-2 text-center"><div class="text-[10px] uppercase tracking-widest text-slate-400">Level</div><div id="level" class="font-bold text-cyan-300">1</div></div>
+          <div class="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-center"><div class="text-[10px] uppercase tracking-widest text-amber-200/70">Points</div><div id="points" class="font-bold text-amber-400">0</div></div>
+        </div>
+      </div>
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        <div class="flex-1"><div class="mb-1 flex justify-between text-[11px] text-slate-400"><span id="xp-label">Level 1 progress</span><span id="xp-count">0 / 100 XP</span></div><div class="h-2 overflow-hidden rounded-full bg-slate-700"><div id="xp-fill" class="xp-fill h-full rounded-full bg-gradient-to-r from-cyan-500 to-cyan-300" style="width:0%"></div></div></div>
+        <span id="role-badge" class="rounded-full border border-slate-600 px-3 py-1 text-xs font-semibold text-slate-300">GUEST</span>
+      </div>
+    </header>
+
+    <nav class="mb-5 flex gap-2 overflow-x-auto rounded-xl border border-slate-700/70 bg-slate-900 p-2" aria-label="Game modes">
+      <button data-mode="CITIZEN" class="mode-button rounded-lg bg-cyan-500 px-4 py-2 text-sm font-bold text-slate-950">Citizen</button>
+      <button data-mode="POLICE" class="mode-button rounded-lg px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800">Traffic Police</button>
+      <button data-mode="DRIVER" class="mode-button rounded-lg px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800">Bus Driver</button>
+      <span class="ml-auto hidden self-center pr-2 text-xs text-slate-500 sm:block">Switch modes as your character unlocks them</span>
+    </nav>
+
+    <div id="mode-lock" class="mb-5 hidden rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100"></div>
+    <main class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <section class="space-y-6">
+        <div class="overflow-hidden rounded-2xl border border-slate-700/70 bg-slate-900 shadow-xl">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-700/70 px-5 py-4">
+            <div><h1 id="map-title" class="font-semibold">Dhaka transit watch</h1><p id="map-subtitle" class="mt-1 text-xs text-slate-400">Tap the map to choose an observation location</p></div>
+            <div class="flex items-center gap-2 text-xs text-slate-300"><span class="h-2 w-2 rounded-full bg-emerald-400"></span> Dhaka map <span class="ml-2 rounded-full bg-slate-800 px-2.5 py-1 text-slate-300">Mirpur 1 · Dhaka</span></div>
+          </div>
+          <div id="map" aria-label="Interactive map of Dhaka bus routes"></div>
+          <div class="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-700/70 px-5 py-3 text-xs text-slate-400"><span class="flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full bg-cyan-400"></i> Bus report</span><span class="flex items-center gap-2"><i class="h-2.5 w-2.5 rounded-full bg-amber-400"></i> Safety concern</span><span>Map © OpenStreetMap contributors</span></div>
+        </div>
+
+        <section id="citizen-panel" class="mode-panel space-y-6">
+          <section class="rounded-2xl border border-slate-700/70 bg-slate-900 p-5 shadow-xl" aria-labelledby="report-heading">
+            <div class="mb-4 flex items-center justify-between gap-3"><div><h2 id="report-heading" class="font-semibold">Report a bus issue</h2><p class="mt-1 text-xs text-slate-400">Every report earns 20 points; verified reports earn a +10 bonus.</p></div><span class="shrink-0 rounded-lg bg-amber-400/10 px-3 py-1.5 text-sm font-bold text-amber-400">+20 XP</span></div>
+            <form id="observation-form" class="grid gap-3 sm:grid-cols-2">
+              <label class="text-xs text-slate-400">Bus number<input name="bus_number" required maxlength="50" placeholder="Dhaka Metro-Ba 11-1234" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-400"></label>
+              <label class="text-xs text-slate-400">Route<input name="route_name" required maxlength="150" value="Mirpur 1 – Farmgate" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-400"></label>
+              <label class="text-xs text-slate-400">Issue type<select name="issue_type" class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-400"><option>OVERCROWDING</option><option>FEMALE_SEAT_VIOLATION</option><option>FARE_BARGAINING</option><option>RASH_DRIVING</option></select></label>
+              <label class="text-xs text-slate-400">Photo URL<input name="image_url" type="url" required placeholder="https://..." class="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-100 outline-none focus:border-cyan-400"></label>
+              <input name="latitude" type="hidden"><input name="longitude" type="hidden">
+              <div id="location-label" class="sm:col-span-2 text-xs text-slate-500">Selected map location: Mirpur 1 (23.8067, 90.3686)</div>
+              <button class="sm:col-span-2 rounded-lg bg-cyan-500 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300">Submit observation</button>
+            </form>
+          </section>
+
+          <section class="rounded-2xl border border-slate-700/70 bg-slate-900 p-5 shadow-xl">
+            <div class="mb-4"><h2 class="font-semibold">Your next city role</h2><p class="mt-1 text-xs text-slate-400">Choose a career path for your character.</p></div>
+            <div class="grid gap-3 sm:grid-cols-3">
+              <button id="police-button" class="rounded-lg border border-slate-700 bg-slate-800 p-3 text-left transition hover:border-cyan-500/60"><span class="block text-sm font-semibold">👮 Traffic Police</span><span class="mt-1 block text-xs text-slate-400">Unlock at Level 10</span></button>
+              <button id="training-button" class="rounded-lg border border-slate-700 bg-slate-800 p-3 text-left transition hover:border-cyan-500/60"><span class="block text-sm font-semibold">📘 Driver training</span><span class="mt-1 block text-xs text-slate-400">Complete academy training</span></button>
+              <button id="license-button" class="rounded-lg border border-slate-700 bg-slate-800 p-3 text-left transition hover:border-cyan-500/60"><span class="block text-sm font-semibold">🪪 Issue license</span><span class="mt-1 block text-xs text-slate-400">Requires training</span></button>
+            </div>
+          </section>
+        </section>
+
+        <section id="police-panel" class="mode-panel hidden rounded-2xl border border-cyan-900/60 bg-slate-900 p-5 shadow-xl">
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 class="font-semibold text-cyan-200">Traffic Police · report radar</h2><p class="mt-1 text-xs text-slate-400">Review pending citizen reports; verified reports award +10 bonus XP.</p></div><button id="refresh-reports" class="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300 hover:border-cyan-400">Refresh queue</button></div>
+          <div id="police-queue" class="space-y-3"><p class="text-sm text-slate-500">Loading review queue…</p></div>
+        </section>
+
+        <section id="driver-panel" class="mode-panel hidden space-y-5">
+          <div class="rounded-2xl border border-amber-400/20 bg-gradient-to-br from-slate-900 to-slate-800 p-5 shadow-xl">
+            <div class="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 class="font-semibold text-amber-100">Bus Driver Simulator</h2><p class="mt-1 text-xs text-slate-400">Drive three Dhaka route checkpoints and build your safety rating.</p></div><div class="text-right"><div class="text-xs text-slate-400">Driver rating</div><div id="driver-rating" class="font-bold text-amber-400">— ★</div></div></div>
+            <form id="trip-start-form" class="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+              <select name="route_name" id="driver-route" required class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm outline-none focus:border-amber-400"><option value="">Loading routes…</option></select>
+              <input name="bus_number" required maxlength="50" placeholder="Your bus number" class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm outline-none focus:border-amber-400">
+              <button class="rounded-lg bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300">Start trip</button>
+            </form>
+          </div>
+          <div id="simulator" class="hidden rounded-2xl border border-slate-700/70 bg-slate-900 p-5 shadow-xl">
+            <div class="mb-4 flex items-center justify-between"><div><h3 class="font-semibold">Route checkpoint</h3><p id="checkpoint-label" class="mt-1 text-xs text-slate-400">Checkpoint 1 of 3</p></div><span id="safety-score" class="rounded-full bg-cyan-400/10 px-3 py-1 text-xs font-semibold text-cyan-300">Safe driving</span></div>
+            <div class="mb-4 h-2 overflow-hidden rounded-full bg-slate-700"><div id="route-progress" class="h-full w-0 rounded-full bg-amber-400 transition-all"></div></div>
+            <p id="checkpoint-prompt" class="mb-4 text-sm text-slate-300">A pedestrian is approaching a busy bus stop. Choose how to drive.</p>
+            <div id="driving-actions" class="grid gap-2 sm:grid-cols-3">
+              <button data-action="safe_actions" class="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-3 text-sm text-emerald-200 hover:bg-emerald-500/20">Drive safely</button>
+              <button data-action="hard_brakes" class="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-3 text-sm text-amber-100 hover:bg-amber-500/20">Brake hard</button>
+              <button data-action="speeding_events" class="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-3 text-sm text-rose-200 hover:bg-rose-500/20">Speed</button>
+            </div>
+            <button id="complete-trip" disabled class="mt-4 w-full rounded-lg bg-cyan-500 px-4 py-3 text-sm font-bold text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">Finish trip after 3 checkpoints</button>
+            <div id="trip-result" class="mt-4 hidden rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-sm text-amber-100"></div>
+          </div>
+        </section>
+      </section>
+
+      <aside class="space-y-6">
+        <section id="registration-card" class="rounded-2xl border border-slate-700/70 bg-slate-900 p-5 shadow-xl">
+          <div id="auth-options">
+            <div class="mb-4"><h2 class="font-semibold">Enter the city</h2><p class="mt-1 text-xs text-slate-400">Log in to continue your journey or create a new character.</p></div>
+            <div class="mb-4 grid grid-cols-2 rounded-lg bg-slate-800 p-1">
+              <button id="login-tab" type="button" class="rounded-md bg-cyan-500 px-3 py-2 text-sm font-bold text-slate-950">Login</button>
+              <button id="register-tab" type="button" class="rounded-md px-3 py-2 text-sm font-semibold text-slate-300">Register</button>
+            </div>
+            <form id="login-form" class="space-y-3">
+              <input name="email" type="email" required autocomplete="username" placeholder="Email address" class="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm outline-none focus:border-cyan-400">
+              <input name="password" type="password" required autocomplete="current-password" placeholder="Password" class="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm outline-none focus:border-cyan-400">
+              <button class="w-full rounded-lg bg-cyan-500 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-cyan-400">Login &amp; play</button>
+            </form>
+            <div id="demo-accounts" class="mt-5 border-t border-slate-700 pt-4">
+              <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Local demo accounts</h3>
+              <p class="mb-3 text-[11px] leading-relaxed text-amber-200/80">For local development only. Configure private local demo passwords before seeding with <code>python seed_demo_users.py</code>.</p>
+              <p class="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-400">Demo accounts require locally configured passwords.</p>
+            </div>
+            <form id="registration-form" class="hidden space-y-3">
+            <input name="full_name" required minlength="2" placeholder="Full name" class="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm outline-none focus:border-cyan-400">
+            <input name="email" type="email" required placeholder="Email address" class="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm outline-none focus:border-cyan-400">
+            <input name="phone" type="tel" required placeholder="Phone number" class="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm outline-none focus:border-cyan-400">
+            <input name="profile_image_url" type="url" required placeholder="Profile image URL" class="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm outline-none focus:border-cyan-400">
+            <div class="grid grid-cols-2 gap-3"><select name="identity_type" class="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm outline-none focus:border-cyan-400"><option>NID</option><option>PASSPORT</option><option>BIRTH_CERTIFICATE</option></select><input name="nid_passport_number" required placeholder="Document number" class="min-w-0 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm outline-none focus:border-cyan-400"></div>
+            <input name="password" type="password" minlength="10" maxlength="128" required autocomplete="new-password" placeholder="Password (at least 10 characters)" class="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm outline-none focus:border-cyan-400">
+            <button class="w-full rounded-lg border border-cyan-500/60 bg-cyan-500/10 px-4 py-3 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/20">Register as citizen</button>
+          </form>
+          </div>
+          <div id="signed-in-card" class="hidden">
+            <div class="mb-3"><h2 class="font-semibold">Your character</h2><p class="mt-1 text-xs text-slate-400">Your journey is saved to your account.</p></div>
+            <div class="rounded-xl border border-slate-700 bg-slate-800 p-4"><div id="character-name" class="font-semibold"></div><div id="character-summary" class="mt-1 text-xs text-slate-400"></div></div>
+          </div>
+          <button id="sign-out" class="mt-3 hidden w-full rounded-lg px-3 py-2 text-xs text-slate-400 hover:bg-slate-800">Clear this browser's saved character</button>
+        </section>
+        <section class="rounded-2xl border border-slate-700/70 bg-slate-900 p-5 shadow-xl">
+          <div class="mb-4 flex items-center justify-between"><h2 class="font-semibold">City guardians</h2><span class="text-xs text-slate-500">TOP 10</span></div>
+          <ol id="leaderboard" class="space-y-3 text-sm"><li class="text-xs text-slate-500">Loading leaderboard…</li></ol>
+        </section>
+      </aside>
+    </main>
+    <div id="notice" role="status" aria-live="polite" class="fixed bottom-5 left-1/2 z-[1000] hidden max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-xl border border-slate-600 bg-slate-800 px-4 py-3 text-sm shadow-2xl"></div>
+    <footer class="py-6 text-center text-xs text-slate-500">SmartTransit AI · Built for safer journeys across Bangladesh</footer>
+  </div>
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    const notice = $("#notice");
+    const checkpoints = [
+      "A pedestrian is approaching a busy bus stop. Choose how to drive.",
+      "Traffic is slowing near Farmgate. Keep your passengers safe.",
+      "You are nearing a crowded intersection. Make your final driving choice."
+    ];
+    let activeTripId = null;
+    let checkpoint = 0;
+    let actionCounts = { safe_actions: 0, hard_brakes: 0, speeding_events: 0 };
+    let locationMarker = null;
+    let noticeTimer;
+
+    function currentUser() {
+      try { return JSON.parse(localStorage.getItem("smarttransit.user") || "null"); }
+      catch { return null; }
+    }
+    function accessToken() {
+      return localStorage.getItem("smarttransit.token");
+    }
+    function showNotice(message, error = false) {
+      notice.textContent = message;
+      notice.className = `fixed bottom-5 left-1/2 z-[1000] max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-xl border px-4 py-3 text-sm shadow-2xl ${error ? "border-rose-500/50 bg-rose-950 text-rose-100" : "border-cyan-500/50 bg-slate-800 text-slate-100"}`;
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(() => notice.classList.add("hidden"), 5000);
+    }
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken() ? { Authorization: `Bearer ${accessToken()}` } : {}),
+          ...(options.headers || {})
+        }
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 401 && !path.includes("/auth/")) {
+          localStorage.removeItem("smarttransit.token");
+          localStorage.removeItem("smarttransit.user");
+        }
+        const detail = Array.isArray(body.detail)
+          ? body.detail.map((item) => item.msg || JSON.stringify(item)).join("; ")
+          : typeof body.detail === "string"
+            ? body.detail
+            : body.detail
+              ? JSON.stringify(body.detail)
+              : `Request failed (${response.status})`;
+        throw new Error(detail);
+      }
+      return body;
+    }
+    function setSession(result) {
+      localStorage.setItem("smarttransit.token", result.access_token);
+      setUser(result.user);
+    }
+    function setUser(user) {
+      localStorage.setItem("smarttransit.user", JSON.stringify(user));
+      const level = Number(user.current_level || 1);
+      const points = Number(user.total_points || 0);
+      const floor = level >= 10 ? level * 100 : level === 1 ? 0 : (level - 1) * 100;
+      const ceiling = level * 100;
+      const progress = Math.max(0, Math.min(100, ((points - floor) / (ceiling - floor)) * 100));
+      $("#user-name").textContent = user.full_name;
+      $("#user-title").textContent = user.level_title || "Novice Observer";
+      $("#level").textContent = level;
+      $("#points").textContent = points.toLocaleString();
+      $("#xp-label").textContent = `Level ${level} progress`;
+      $("#xp-count").textContent = `${points.toLocaleString()} / ${ceiling.toLocaleString()} XP`;
+      $("#xp-fill").style.width = `${progress}%`;
+      $("#role-badge").textContent = user.user_role || "CITIZEN";
+      if (user.profile_image_url) $("#avatar").src = user.profile_image_url;
+      $("#auth-options").classList.add("hidden");
+      $("#signed-in-card").classList.remove("hidden");
+      $("#character-name").textContent = user.full_name;
+      $("#character-summary").textContent = `${user.user_role} · ${user.total_points.toLocaleString()} XP · ${user.completed_trips || 0} completed trips`;
+      $("#sign-out").classList.remove("hidden");
+      $("#driver-rating").textContent = user.driver_rating == null ? "— ★" : `${Number(user.driver_rating).toFixed(1)} ★`;
+      syncMode();
+    }
+    async function refreshProfile() {
+      const user = currentUser();
+      if (!user || !accessToken()) return;
+      const profile = await api(`/api/v1/user/profile?user_id=${encodeURIComponent(user.id)}`);
+      setUser({ ...user, ...profile });
+    }
+
+    const map = L.map("map", { scrollWheelZoom: false }).setView([23.8067, 90.3686], 12);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+    const reportLayer = L.layerGroup().addTo(map);
+    const routes = [
+      [[23.8067, 90.3686], [23.7942, 90.3678], [23.7806, 90.3742], [23.7639, 90.3832], [23.7515, 90.3926]],
+      [[23.8067, 90.3686], [23.8182, 90.3659], [23.8313, 90.3652], [23.8451, 90.3676]]
+    ];
+    routes.forEach((route, index) => L.polyline(route, {
+      color: index ? "#F59E0B" : "#06B6D4", weight: 4, opacity: 0.75, dashArray: index ? "8 8" : null
+    }).addTo(map));
+    L.circleMarker([23.8067, 90.3686], { radius: 5, color: "#e2e8f0", fillColor: "#06B6D4", fillOpacity: 1 }).addTo(map).bindPopup("Mirpur 1 · Bus corridor");
+
+    function addReportMarker(report) {
+      const issue = report.issue_type;
+      const position = report.latitude == null || report.longitude == null
+        ? [23.8067, 90.3686]
+        : [Number(report.latitude), Number(report.longitude)];
+      const safetyIssue = issue === "RASH_DRIVING" || issue === "FEMALE_SEAT_VIOLATION";
+      const icon = L.divIcon({
+        className: "",
+        html: `<span class="report-marker ${safetyIssue ? "alert" : ""}">!</span>`,
+        iconSize: [36, 36], iconAnchor: [18, 18]
+      });
+      const popup = document.createElement("div");
+      const heading = document.createElement("strong");
+      heading.textContent = issue.replaceAll("_", " ");
+      const details = document.createElement("div");
+      details.textContent = `${report.bus_number} · ${report.route_name} · ${report.status}`;
+      popup.append(heading, details);
+      L.marker(position, { icon }).addTo(reportLayer).bindPopup(popup);
+    }
+    function chooseMapLocation(event) {
+      const latitude = event.latlng.lat;
+      const longitude = event.latlng.lng;
+      $("#observation-form").elements.latitude.value = latitude.toFixed(6);
+      $("#observation-form").elements.longitude.value = longitude.toFixed(6);
+      $("#location-label").textContent = `Selected map location: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+      if (locationMarker) map.removeLayer(locationMarker);
+      locationMarker = L.circleMarker(event.latlng, { radius: 8, color: "#fff", weight: 2, fillColor: "#F59E0B", fillOpacity: 1 }).addTo(map).bindPopup("Selected report location");
+    }
+    map.on("click", chooseMapLocation);
+    chooseMapLocation({ latlng: L.latLng(23.8067, 90.3686) });
+
+    async function loadObservations() {
+      try {
+        const data = await api("/api/v1/observations?limit=100");
+        reportLayer.clearLayers();
+        data.observations.forEach(addReportMarker);
+      } catch (error) { showNotice(`Could not load reports: ${error.message}`, true); }
+    }
+    function syncMode() {
+      const user = currentUser();
+      const selected = document.querySelector(".mode-button.bg-cyan-500")?.dataset.mode || "CITIZEN";
+      const panels = { CITIZEN: $("#citizen-panel"), POLICE: $("#police-panel"), DRIVER: $("#driver-panel") };
+      document.querySelectorAll(".mode-panel").forEach((panel) => panel.classList.add("hidden"));
+      $("#mode-lock").classList.add("hidden");
+      if (!user) {
+        if (selected !== "CITIZEN") {
+          $("#mode-lock").textContent = "Register as a citizen to create your character and unlock the other game modes.";
+          $("#mode-lock").classList.remove("hidden");
+        }
+        panels.CITIZEN.classList.remove("hidden");
+        $("#registration-card").classList.remove("hidden");
+        return;
+      }
+      const allowed = selected === user.user_role;
+      if (allowed) {
+        panels[selected].classList.remove("hidden");
+        $("#registration-card").classList.add("hidden");
+        if (selected === "POLICE") loadPoliceQueue();
+      } else {
+        $("#mode-lock").textContent = selected === "POLICE"
+          ? "Traffic Police Radar unlocks at Level 10. Earn points as a citizen, then promote your character."
+          : "Bus Driver Simulator requires completed training and a government-issued license.";
+        $("#mode-lock").classList.remove("hidden");
+        if (user.user_role === "CITIZEN") panels.CITIZEN.classList.remove("hidden");
+        $("#registration-card").classList.add("hidden");
+      }
+    }
+    document.querySelectorAll(".mode-button").forEach((button) => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".mode-button").forEach((item) => item.className = "mode-button rounded-lg px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-slate-800");
+        button.className = "mode-button rounded-lg bg-cyan-500 px-4 py-2 text-sm font-bold text-slate-950";
+        $("#map-title").textContent = button.dataset.mode === "POLICE" ? "Traffic police radar" : button.dataset.mode === "DRIVER" ? "Driver route simulator" : "Dhaka transit watch";
+        $("#map-subtitle").textContent = button.dataset.mode === "POLICE" ? "Pending reports and enforcement activity" : button.dataset.mode === "DRIVER" ? "Dhaka training corridors" : "Tap the map to choose an observation location";
+        syncMode();
+      });
+    });
+
+    function selectAuthMode(mode) {
+      const loginMode = mode === "login";
+      $("#login-form").classList.toggle("hidden", !loginMode);
+      $("#registration-form").classList.toggle("hidden", loginMode);
+      $("#demo-accounts").classList.toggle("hidden", !loginMode);
+      $("#login-tab").className = loginMode
+        ? "rounded-md bg-cyan-500 px-3 py-2 text-sm font-bold text-slate-950"
+        : "rounded-md px-3 py-2 text-sm font-semibold text-slate-300";
+      $("#register-tab").className = loginMode
+        ? "rounded-md px-3 py-2 text-sm font-semibold text-slate-300"
+        : "rounded-md bg-cyan-500 px-3 py-2 text-sm font-bold text-slate-950";
+    }
+    $("#login-tab").addEventListener("click", () => selectAuthMode("login"));
+    $("#register-tab").addEventListener("click", () => selectAuthMode("register"));
+    document.querySelectorAll(".demo-login").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectAuthMode("login");
+        $("#login-form").elements.email.value = button.dataset.demoEmail;
+        $("#login-form").elements.password.value = button.dataset.demoPassword;
+        $("#login-form").requestSubmit();
+      });
+    });
+    $("#login-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(event.currentTarget));
+      try {
+        const result = await api("/api/v1/auth/login", { method: "POST", body: JSON.stringify(values) });
+        setSession(result);
+        showNotice(`Welcome back, ${result.user.full_name}. Game on!`);
+      } catch (error) { showNotice(error.message, true); }
+    });
+    $("#registration-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(event.currentTarget));
+      try {
+        const result = await api("/api/v1/auth/register", { method: "POST", body: JSON.stringify(values) });
+        setSession(result);
+        showNotice("Welcome aboard! Your citizen character is ready.");
+        await refreshProfile();
+      } catch (error) { showNotice(error.message, true); }
+    });
+
+    $("#observation-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const user = currentUser();
+      if (!user) return showNotice("Register first to submit a report.", true);
+      const values = Object.fromEntries(new FormData(event.currentTarget));
+      values.latitude = Number(values.latitude);
+      values.longitude = Number(values.longitude);
+      try {
+        const result = await api("/api/v1/observations", {
+          method: "POST",
+          body: JSON.stringify({ ...values, reporter_id: user.id })
+        });
+        setUser({ ...user, ...result.level });
+        showNotice("Report submitted · +20 XP · pending police review");
+        event.currentTarget.reset();
+        event.currentTarget.elements.route_name.value = "Mirpur 1 – Farmgate";
+        chooseMapLocation({ latlng: L.latLng(23.8067, 90.3686) });
+        loadObservations();
+        loadLeaderboard();
+      } catch (error) { showNotice(error.message, true); }
+    });
+
+    async function transition(path, successMessage) {
+      const user = currentUser();
+      if (!user) return showNotice("Register first to unlock a role.", true);
+      try {
+        await api(path, { method: "POST", body: JSON.stringify({ user_id: user.id }) });
+        await refreshProfile();
+        showNotice(successMessage);
+        if (currentUser().user_role === "POLICE") {
+          document.querySelector('[data-mode="POLICE"]').click();
+        } else if (currentUser().user_role === "DRIVER") {
+          document.querySelector('[data-mode="DRIVER"]').click();
+        }
+      } catch (error) { showNotice(error.message, true); }
+    }
+    $("#police-button").addEventListener("click", () => transition("/api/v1/user/promote-to-police", "Traffic Police Radar mode unlocked."));
+    $("#training-button").addEventListener("click", () => transition("/api/v1/driver/complete-training", "Driver training completed. You can now request your license."));
+    $("#license-button").addEventListener("click", () => transition("/api/v1/driver/issue-license", "Government driver license issued. Bus Simulator unlocked."));
+
+    async function loadPoliceQueue() {
+      const user = currentUser();
+      if (!user) return;
+      const queue = $("#police-queue");
+      queue.textContent = "Loading review queue…";
+      try {
+        const data = await api(`/api/v1/police/observations?user_id=${encodeURIComponent(user.id)}`);
+        queue.replaceChildren();
+        if (!data.observations.length) {
+          const empty = document.createElement("p");
+          empty.className = "text-sm text-slate-500";
+          empty.textContent = "All clear. No pending reports to review.";
+          queue.append(empty);
+          return;
+        }
+        data.observations.forEach((report) => {
+          const card = document.createElement("article");
+          card.className = "rounded-xl border border-slate-700 bg-slate-800/70 p-4";
+          const title = document.createElement("h3");
+          title.className = "font-semibold text-slate-100";
+          title.textContent = `${report.issue_type.replaceAll("_", " ")} · ${report.bus_number}`;
+          const info = document.createElement("p");
+          info.className = "mt-1 text-xs text-slate-400";
+          info.textContent = `${report.route_name} · reported by ${report.reporter_name}`;
+          card.append(title, info);
+          if (report.image_url) {
+            const imageLink = document.createElement("a");
+            imageLink.href = report.image_url;
+            imageLink.target = "_blank";
+            imageLink.rel = "noopener noreferrer";
+            imageLink.className = "mt-2 inline-block text-xs text-cyan-300 underline";
+            imageLink.textContent = "Open evidence photo";
+            card.append(imageLink);
+          }
+          const controls = document.createElement("div");
+          controls.className = "mt-3 grid gap-2 sm:grid-cols-[1fr_120px_auto_auto]";
+          const note = document.createElement("input");
+          note.placeholder = "Review note (optional)";
+          note.className = "min-w-0 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs outline-none focus:border-cyan-400";
+          const fine = document.createElement("input");
+          fine.type = "number";
+          fine.min = "0";
+          fine.max = "5000000";
+          fine.step = "100";
+          fine.value = "0";
+          fine.title = "Optional fine in BDT for verified reports";
+          fine.className = "rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-xs outline-none focus:border-cyan-400";
+          const verify = document.createElement("button");
+          verify.className = "rounded-lg bg-cyan-500 px-3 py-2 text-xs font-bold text-slate-950";
+          verify.textContent = "Verify";
+          verify.addEventListener("click", () => reviewReport(report.id, "VERIFIED", note.value, Number(fine.value)));
+          const reject = document.createElement("button");
+          reject.className = "rounded-lg border border-rose-500/40 px-3 py-2 text-xs text-rose-200";
+          reject.textContent = "Reject";
+          reject.addEventListener("click", () => reviewReport(report.id, "REJECTED", note.value, 0));
+          controls.append(note, fine, verify, reject);
+          card.append(controls);
+          queue.append(card);
+        });
+      } catch (error) { queue.textContent = error.message; }
+    }
+    async function reviewReport(id, decision, reviewNote, fineAmount) {
+      const user = currentUser();
+      try {
+        const result = await api(`/api/v1/police/observations/${id}/review`, {
+          method: "POST",
+          body: JSON.stringify({ reviewer_id: user.id, decision, review_note: reviewNote, fine_amount_bdt: fineAmount })
+        });
+        showNotice(decision === "VERIFIED" ? `Report verified · +${result.bonus_points_awarded} XP bonus${fineAmount ? ` · ৳${fineAmount} fine recorded` : ""}` : "Report rejected.");
+        loadPoliceQueue();
+        loadObservations();
+        loadLeaderboard();
+      } catch (error) { showNotice(error.message, true); }
+    }
+    $("#refresh-reports").addEventListener("click", loadPoliceQueue);
+
+    async function loadRoutes() {
+      try {
+        const data = await api("/api/v1/driver/routes");
+        const select = $("#driver-route");
+        select.replaceChildren();
+        data.routes.forEach((route) => {
+          const option = document.createElement("option");
+          option.value = route.route_name;
+          option.textContent = `${route.route_name} · ${route.checkpoints} checkpoints`;
+          select.append(option);
+        });
+      } catch (error) { $("#driver-route").replaceChildren(new Option("Routes unavailable", "")); }
+    }
+    $("#trip-start-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const user = currentUser();
+      const values = Object.fromEntries(new FormData(event.currentTarget));
+      try {
+        const trip = await api("/api/v1/driver/trips", {
+          method: "POST",
+          body: JSON.stringify({ ...values, user_id: user.id })
+        });
+        activeTripId = trip.trip_id;
+        checkpoint = 0;
+        actionCounts = { safe_actions: 0, hard_brakes: 0, speeding_events: 0 };
+        $("#simulator").classList.remove("hidden");
+        $("#trip-result").classList.add("hidden");
+        $("#complete-trip").disabled = true;
+        renderCheckpoint();
+        showNotice(`Trip started: ${trip.route_name}`);
+      } catch (error) { showNotice(error.message, true); }
+    });
+    function renderCheckpoint() {
+      $("#checkpoint-label").textContent = checkpoint < 3 ? `Checkpoint ${checkpoint + 1} of 3` : "All checkpoints complete";
+      $("#checkpoint-prompt").textContent = checkpoint < 3 ? checkpoints[checkpoint] : "Finish your trip to see your safety rating.";
+      $("#route-progress").style.width = `${(checkpoint / 3) * 100}%`;
+      $("#safety-score").textContent = `${actionCounts.safe_actions} safe · ${actionCounts.hard_brakes} hard brake · ${actionCounts.speeding_events} speeding`;
+      document.querySelectorAll("#driving-actions button").forEach((button) => button.disabled = checkpoint >= 3);
+      $("#complete-trip").disabled = checkpoint < 3;
+    }
+    document.querySelectorAll("#driving-actions button").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (checkpoint >= 3) return;
+        actionCounts[button.dataset.action] += 1;
+        checkpoint += 1;
+        renderCheckpoint();
+      });
+    });
+    $("#complete-trip").addEventListener("click", async () => {
+      const user = currentUser();
+      try {
+        const result = await api(`/api/v1/driver/trips/${activeTripId}/complete`, {
+          method: "POST",
+          body: JSON.stringify({ user_id: user.id, ...actionCounts })
+        });
+        $("#trip-result").textContent = `Trip complete · ${"★".repeat(Math.round(result.trip_rating))}${"☆".repeat(5 - Math.round(result.trip_rating))} ${result.trip_rating.toFixed(1)} · Safety score ${result.safety_score}/100`;
+        $("#trip-result").classList.remove("hidden");
+        $("#complete-trip").disabled = true;
+        await refreshProfile();
+        showNotice(`Trip finished · Driver rating ${result.driver_rating.toFixed(1)} ★`);
+      } catch (error) { showNotice(error.message, true); }
+    });
+
+    async function loadLeaderboard() {
+      try {
+        const data = await api("/api/v1/game/leaderboard");
+        const list = $("#leaderboard");
+        list.replaceChildren();
+        if (!data.leaderboard.length) {
+          const item = document.createElement("li");
+          item.className = "text-xs text-slate-500";
+          item.textContent = "No city guardians yet. Be the first to report!";
+          list.append(item);
+          return;
+        }
+        data.leaderboard.forEach((person) => {
+          const item = document.createElement("li");
+          item.className = "flex items-center justify-between gap-3";
+          const name = document.createElement("span");
+          name.className = "min-w-0 truncate text-slate-300";
+          name.textContent = `${String(person.rank).padStart(2, "0")}  ${person.full_name}`;
+          const score = document.createElement("span");
+          score.className = "shrink-0 font-semibold text-amber-400";
+          score.textContent = `${person.total_points} pts`;
+          item.append(name, score);
+          list.append(item);
+        });
+      } catch (error) { $("#leaderboard").textContent = "Leaderboard unavailable."; }
+    }
+
+    $("#sign-out").addEventListener("click", () => {
+      localStorage.removeItem("smarttransit.token");
+      localStorage.removeItem("smarttransit.user");
+      location.reload();
+    });
+    if (accessToken() && currentUser()) {
+      refreshProfile().catch((error) => {
+        localStorage.removeItem("smarttransit.token");
+        localStorage.removeItem("smarttransit.user");
+        showNotice(`${error.message} Please log in again.`, true);
+      });
+    } else {
+      localStorage.removeItem("smarttransit.token");
+      localStorage.removeItem("smarttransit.user");
+    }
+    loadObservations();
+    loadRoutes();
+    loadLeaderboard();
+  </script>
+</body>
+</html>
